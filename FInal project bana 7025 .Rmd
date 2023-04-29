@@ -1,0 +1,423 @@
+---
+title: "Final project BANA 7025"
+author: "Group 6 - Zach Taylor, Shilpa Rani, Sean McGill, Tejaswini Avvaru"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    code_folding: hide
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+
+## Final Project {.tabset .tabset-fade .tabset-pills}
+### Introduction 
+
+The goal of this project is to use data analytics to identify and improve potential areas of growth for the company Regork, a national grocery chain. As a team of data scientists, we analyzed data in the Complete Journey Study provided by 84.51°. It contains data on 2,500 households who frequently shop at Regork. More information about the dataset can be found [here](https://bradleyboehmke.github.io/completejourney/)
+
+In this project, we plan to explore, analyze and visualize the data to ultimately answer the below two questions:
+	
+Business Question 1: How is liquor sale dependent on various seasons and how does it vary by the different types of liquor?
+
+Business Question 2: How are the sales of different types of products during the holiday season and how is it impacted by the campaigns? 
+	
+This project will help Regork to better understand what factors impact the purchase of liquor, and detailed analysis of sales during holiday season. This information can also be used to issue coupons and target to increase the sales. Also, campaigns can be intelligently designed based on the customer spending levels on various product categories.
+
+	
+### Packages Required
+
+The below libraries are used in this project. Most users shall need to install these packages prior to executing this project.
+
+```{r}
+## Load Required Packages 
+
+library("completejourney") #grocery store shopping transactions data from group of 2,469 households
+library("stringr") # text manipulation
+library("dplyr") # manipulating and transforming data (i.e., filtering, joining, etc.)
+library("ggplot2") # data visualization plotting system using "Grammar of Graphics"
+library("lubridate") # functions used for working with dates and times
+library("gt") #used to produce nice-looking display tables
+library("glue") #offers interpreted string literals that are small, fast, and dependency-free
+library("reshape2") #Flexibly restructure and aggregate data
+
+```
+
+### Data preparation {.tabset}
+
+#### Data set details
+
+There are eight built-in data sets available in this package and we are focusing mainly on:
+
+* demographics: household demographic data (age, income, family size, etc.)
+* products: product metadata (brand, description, etc.)
+* get_transactions(): to get the full transactions data set
+* campaigns: campaigns received by each household
+
+
+
+![Data set details](C:\Users\15136\Documents\RStudioWD\Final Project\dataset details.png){width=50%}
+
+#### Loading data
+
+Loading from datasource:
+
+```{r}
+transactions <- get_transactions()
+promotions <- get_promotions()
+demo <- demographics
+products_data <- products
+coupons_data <- coupon_redemptions
+promotions_data <- get_promotions()
+
+```
+
+Checking for NULL values in all the dataframes.
+
+```{r}
+is.null(transactions)
+is.null(demo)
+is.null(promotions)
+
+```
+
+
+
+### Exploratory Data Analysis {.tabset}
+
+#### Margaritas - Revenue Growth
+
+The Liquor product category showed substantial seasonal variation that correlates with the holidays of:
+* Super Bowl
+* St. Patrick's Day
+* Memorial Day
+* Independence Day
+* Labor Day
+* Thanksgiving
+* Christmas
+* New Year
+
+We investigated the hypothesis that different liquors are associated with different holidays.  There may be an opportunity to promote less popular liquors during off-peak seasons.
+
+Below is some code that shows seasonal dependence of different types of liquors on different holidays.  Whiskey has a very different pattern than Margaritas and Schnapps.  The below code will generate individual line plots, and also a table showing monthly spending on whisky and margarita which illustrates the seasonal differences. 
+
+
+```{r}
+# 1 Seasonal dependence of liquor sales
+transactions %>%
+  left_join(., products, by = "product_id") %>%
+  filter(str_detect(product_category, 'LIQUOR')) %>%
+  left_join(., coupons, by = "product_id") %>%
+  left_join(., promotions, by = "product_id") %>%
+  left_join(., campaign_descriptions, by = "campaign_id") %>%
+  mutate(date = date(transaction_timestamp)) %>%
+  group_by(date) %>%
+  summarize(total_sales_value = sum(sales_value, na.rm = TRUE)) %>%
+  ggplot() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+  geom_line(mapping = aes(x = date, y = total_sales_value)) +
+  labs(
+    title = "Seasonal dependence of Liquor sales",
+    subtitle = "Holidays drive higher sales",
+    caption = "Data from completejourney package"
+  ) +
+  scale_y_continuous(name = "Total Dollar Value of Sales", labels = scales::dollar) +
+  scale_x_date(date_breaks = "1 week", date_labels =  "%U")
+```
+
+A few of the more interesting product types with noticeable variation around holidays are:
+
+* Margaritas
+* Whiskey
+* Schnapps
+
+Spending on margaritas is heavily concentrated compared to Whiskey.  31% of annual spending on margaritas comes in December, and the top 5 months of spending on margaritas represent 88% of annual spending.
+
+
+```{r}
+#Create data for each liquor_type
+margarita <- transactions %>%
+  left_join(., products, by = "product_id") %>%
+  filter(str_detect(product_category, 'LIQUOR')) %>%
+  filter(str_detect(product_type, 'MARGARITA')) %>%
+  left_join(., coupons, by = "product_id") %>%
+  left_join(., promotions, by = "product_id") %>%
+  left_join(., campaign_descriptions, by = "campaign_id") %>%
+  mutate(date = date(transaction_timestamp)) %>%
+  group_by(date) %>%
+  summarize(total_sales_value = sum(sales_value, na.rm = TRUE))
+
+whisky <- transactions %>%
+  left_join(., products, by = "product_id") %>%
+  filter(str_detect(product_category, 'LIQUOR')) %>%
+  filter(str_detect(product_type, 'WHISK')) %>%
+  left_join(., coupons, by = "product_id") %>%
+  left_join(., promotions, by = "product_id") %>%
+  left_join(., campaign_descriptions, by = "campaign_id") %>%
+  mutate(date = date(transaction_timestamp)) %>%
+  group_by(date) %>%
+  summarize(total_sales_value = sum(sales_value, na.rm = TRUE))
+
+margarita_month <- margarita %>%
+  group_by(month = lubridate::floor_date(date, "month")) %>%
+  summarize(monthly_sales_margarita = sum(total_sales_value))
+
+whisky_month <- whisky %>%
+  group_by(month = lubridate::floor_date(date, "month")) %>%
+  summarize(monthly_sales_whisky = sum(total_sales_value))
+
+month_total <- whisky_month %>%
+  left_join(.,margarita_month, by = "month")
+
+
+# Define the start and end dates for the data range
+start_date <- "2017-01-01"
+end_date <- "2017-12-31"
+
+# Create a gt table to compare whisky and margarita sales by month
+month_gt <- month_total %>%
+  gt() %>%
+  tab_header(
+    title = "Margarita and Whisky Sales by Month",
+    subtitle = glue("{start_date} to {end_date}")
+  ) %>%
+  fmt_date(
+    columns = month,
+    date_style = 11
+  ) %>%
+  fmt_currency(
+    columns = c(monthly_sales_whisky),
+    currency = "USD"
+  ) %>%
+  fmt_currency(
+    columns = c(monthly_sales_margarita),
+    currency = "USD"
+  ) %>%
+  cols_label(
+    month = "Month",
+    monthly_sales_whisky = "Whisky",
+    monthly_sales_margarita = "Margarita",
+  ) %>%
+  opt_stylize(style = 6, color = "gray")
+month_gt
+```
+
+
+Whiskey sales spike in June with 22% of spending and the top 5 months of spending on Whisky only account for 66% of annual spending.
+
+Perhaps Regork could benefit from trying to increase demand for margaritas (through promotions or improved display locations) in March, April, September, October, or November as these 5 months only account for 6% of annual spending. Potential promotions could be:
+*tie ins to football/tailgate parties
+*early spring/extending summer  
+
+
+```{r}
+# 3 Seasonal dependence of liquor sales by product_type - Whiskey; line graph
+transactions %>%
+  left_join(., products, by = "product_id") %>%
+  filter(str_detect(product_category, 'LIQUOR')) %>%
+  filter(str_detect(product_type, 'WHISK')) %>%
+  left_join(., coupons, by = "product_id") %>%
+  left_join(., promotions, by = "product_id") %>%
+  left_join(., campaign_descriptions, by = "campaign_id") %>%
+  mutate(date = date(transaction_timestamp)) %>%
+  group_by(date) %>%
+  summarize(total_sales_value = sum(sales_value, na.rm = TRUE)) %>%
+  ggplot() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) +
+  geom_line(mapping = aes(x = date, y = total_sales_value)) +
+  labs(
+    title = "Seasonal dependence of Whiskey sales",
+    subtitle = "Holidays drive higher sales",
+    caption = "Data from completejourney package"
+  ) +
+  scale_y_continuous(name = "Total Dolalr Value of Sales", labels = scales::dollar) +
+  scale_x_date(date_breaks = "1 week", date_labels =  "%U")
+```
+#4
+```{r}
+# 4 Seasonal dependence of liquor sales by product_type - SCHNAPP; line graph
+transactions %>%
+  left_join(., products, by = "product_id") %>%
+  filter(str_detect(product_category, 'LIQUOR')) %>%
+  filter(str_detect(product_type, 'SCHNAPP')) %>%
+  left_join(., coupons, by = "product_id") %>%
+  left_join(., promotions, by = "product_id") %>%
+  left_join(., campaign_descriptions, by = "campaign_id") %>%
+  mutate(date = date(transaction_timestamp)) %>%
+  group_by(date) %>%
+  summarize(total_sales_value = sum(sales_value, na.rm = TRUE)) %>%
+  ggplot() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) + 
+  geom_line(mapping = aes(x = date, y = total_sales_value)) +
+  labs(
+    title = "Seasonal dependence of Schnapps sales",
+    subtitle = "Holidays drive higher sales",
+    caption = "Data from completejourney package"
+  ) +
+  scale_y_continuous(name = "Total Dolalr Value of Sales", labels = scales::dollar) +
+  scale_x_date(date_breaks = "1 week", date_labels =  "%U")
+```
+#5
+```{r}
+# 5 Seasonal dependence of liquor sales by product_type - SCHNAPP; line graph
+df1 <- transactions %>%
+  left_join(., products, by = "product_id") %>%
+  filter(str_detect(product_category, 'LIQUOR')) %>%
+  left_join(., coupons, by = "product_id") %>%
+  left_join(., promotions, by = "product_id") %>%
+  left_join(., campaign_descriptions, by = "campaign_id") %>%
+  mutate(date = date(transaction_timestamp),
+         liquor_type = case_when(
+           str_detect(product_type, "MARGARITA") ~ "Margarita",
+           str_detect(product_type, "WHISK") ~ "Whiskey",
+           str_detect(product_type, "SCHNAPP") ~ "Schnapps",
+           str_detect(product_type, "RUM") ~ "Rum",
+           str_detect(product_type, "VODKA") ~ "Vodka",
+           str_detect(product_type, "SPECIALTIES") ~ "Specialties",
+           TRUE ~ as.character(product_type))) %>%
+  group_by(date) %>%
+  summarize(total_sales_value = sum(sales_value, na.rm = TRUE)) %>%
+  ggplot() +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1)) + 
+  geom_line(mapping = aes(x = date, y = total_sales_value, group = liquor_type, color = liquor_type)) +
+  labs(
+    title = "Seasonal dependence of Liquor sales",
+    subtitle = "Holidays drive higher sales",
+    caption = "Data from completejourney package"
+  ) +
+  scale_y_continuous(name = "Total Dollar Value of Sales", labels = scales::dollar) +
+  scale_x_date(date_breaks = "1 week", date_labels =  "%U")
+```
+
+
+
+
+#### Sale trends during holiday weeks
+
+Increasing supply for coup/misc in inventory during holiday period could boost sales.
+
+
+```{r}
+#sales by product_category during holiday months
+
+transactions %>%
+  inner_join(products, by = 'product_id') %>%
+  group_by(product_category, week) %>%
+  filter(week > 50) %>%
+  summarise(sales = sum(sales_value)) %>%
+  arrange(desc(sales)) %>%
+  head(10) %>%
+  ggplot(aes(x = product_category, y = sales)) + 
+  geom_col() +
+  ggtitle("sales by product category during holiday weeks",
+          subtitle = "coupon/misc has highest sales")
+```
+
+Investement in campaign B and C is required to improve sales.
+
+```{r}
+#sales during holiday months based on campaign
+
+transactions %>% 
+  inner_join(campaigns) %>%
+  inner_join(campaign_descriptions) %>% 
+  filter(week > 44) %>% 
+  group_by(campaign_type) %>% 
+  summarise(total_sales = sum(sales_value)) %>% 
+  ggplot(aes(x = campaign_type, y = total_sales)) + 
+  geom_col() +
+  ggtitle("Total Sales in durig holiday month based on Campaign",
+          subtitle = "Campaign A has highest sales in December") +
+  scale_color_brewer()
+```
+Display Location Effect on Sales
+```{r}
+df1 <- transactions %>%
+  inner_join(products) %>%
+  inner_join(promotions)
+ad_labs <- c('Not on Ad', 'Interior Page Feature', 'Interior Page Line Item', 'Front Page Feature', 'Back Page Feature', 'Wrap Front Feature', 'Wrap Interior Coupon', 'Wrap Back Feature', 'Interior Page Coupon', 'Free On Interior Page', 'Free on Front Page, Back Page or Wrap')
+
+df1 %>%
+  ggplot(aes(x = display_location, y = quantity, color = display_location)) +
+  geom_histogram(stat = 'identity') +
+  labs(title = "Sales Per Display Location",
+       x = "Display Location",
+       y = "Number of Sales",) +
+  scale_x_discrete(labels = c("Display", "Store Front", "Store Rear", "Front End Cap", "Mid-aisle End Cap", "Rear End Cap", "Side Aisle End Cap", "In-aisle", "Secondary Location Display"), guide = guide_axis(angle = 90)) +
+  scale_color_discrete() +
+  theme(legend.position = "remove")
+```
+
+Households with high sales value could be given additional exciting offers/coupons.
+
+```{r}
+#sales by households during holiday months
+transactions %>%
+  inner_join(products)%>%
+  filter(week > 50) %>% 
+  group_by(household_id) %>%
+  summarize(Total.sales_value = sum(sales_value)) %>%
+  arrange(desc(Total.sales_value)) %>%
+  top_n(20) %>%
+  ggplot(aes(x = household_id, y = Total.sales_value  , fill = Total.sales_value, group = 1)) +
+  geom_histogram(stat = 'identity') +
+  labs(title = "Sales Values by the households during holiday month",
+       subtitle = "The plot shows top 20 Household with highest sales values during holiday month",
+       x = "Household_id",
+       y = "Total sales") 
+```
+
+Pulling demographics for the 2 highest spenders:
+```{r}
+outlier1 <- demographics %>% 
+  filter(household_id == "1453") %>%
+  group_by(household_id)
+
+outlier1
+
+outlier2 <- demographics %>% 
+  filter(household_id == "1023") %>%
+  group_by(household_id)
+
+outlier2
+```
+As we can see, household #1023 has no data, disregard
+
+Pulling campaign participation for household #1453
+```{r}
+campaigns %>% 
+  filter(household_id == "1453") %>% 
+  left_join(., campaign_descriptions, by="campaign_id") %>% 
+  arrange(start_date)
+```
+
+
+### Summary
+
+<h2>Our Findings:</h2>
+
+We wanted to investigate ways that we could take advantage of trends during the holiday season, and we took two approaches to find usable data.
+
+<h3>Section 1: Trends among top spenders</h3>
+<br>
+We identified 2 households who were spending at much higher levels than the rest of the data set and wanted to specifically dig into them to identify whether there were any factors we could use to bring up the spending from similar customers.
+
+
+
+When digging into the demographics for the two outlier households, we discovered some strange things about one of them.  Household #1023 appears to be a missing entry, or one that has no demographic data available.  Given this situation we will disregard this household moving forward.  Household #1453 on the other hand does have demographic data available: they are a married couple in the 45-54 age bracket with one child, annual income of $125-149K, and they own their home.  Additionally, we looked into their campaigns and in the time period between November and December of 2017 they were targeted by 5 campaigns.  2 of these were type B campaigns, 2 were type C and 1 was type A.
+
+Based on this analysis of an outlier we would recommend a closer look at the sort of investment made in campaigns of type B, given that they had lower overall sales in this time period compared to campaign type A.  Additionally, we would suggest implementation of a loyalty program for customers similar to this one in demographic profile, as they might have similar spending potential but be spreading it over other retailers.
+
+
+
+<h3>Section 2: Alcohol Sales Trends</h3>
+<br>
+We also found that sales for various types of alcohol are seasonal and that certain ones peaked during our targeted timeframe around the holidays and end of year.  One example we wanted to specifically draw attention to was the elevated sales of margaritas during the holiday season and the Super Bowl.  We believe this is likely due to holiday parties around Christmas and New Year’s Eve, and can be taken advantage of in a couple of ways including but not limited to:
+
+A campaign involving coupons to margarita mix targeting households with age ranges that would typically be hosting holiday parties (likely mid 30s into 50s, also must be over 21 years of age for obvious reasons), this could also include coupons to complementary products such as salty snacks, avocados and salsa which are frequently served at parties.
+
+Positioning the above mentioned products in displays that generally demonstrate higher sales performance, such as front end cap displays, can result in additional sales as customers see the items and think “That would be great for our party this weekend, let’s pick it up” when they might have had alternate plans before.
+
